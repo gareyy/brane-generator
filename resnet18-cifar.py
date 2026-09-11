@@ -7,6 +7,7 @@ from tqdm import tqdm
 import time
 from copy import deepcopy
 from brane_generator.model import ResnetEighteen
+import matplotlib.pyplot as plt
 
 torch.manual_seed(67)
 
@@ -22,21 +23,23 @@ train_transform = v2.Compose([
     #v2.RandomResizedCrop(size=(32, 32), antialias=True),
     v2.AutoAugment(v2.AutoAugmentPolicy.CIFAR10),
     v2.RandomHorizontalFlip(0.5),
-    v2.RandomVerticalFlip(0.5),
+    #v2.RandomVerticalFlip(0.5),
     v2.ToImage(),
     v2.ToDtype(torch.float32, scale=True),
-    v2.Normalize(*stats)]) # standardise values to range [-1, 1]
+    #v2.Normalize(*stats), # standardise values to range [-1, 1]
+    ])
 
 test_transform = v2.Compose([
     v2.ToImage(),
     v2.ToDtype(torch.float32, scale=True),
-    v2.Normalize(*stats)]) # standardise values to range [-1, 1]
+    #v2.Normalize(*stats), # standardise values to range [-1, 1]
+    ])
 
 classes = ('plane', 'car', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
 
 #BATCH_SIZE = 8192
 BATCH_SIZE = 1024
-EPOCHS = 200
+EPOCHS = 500
 DISABLE_TQDM = False # change in rangpur
 VALID_RATIO = 0.1
 
@@ -56,10 +59,19 @@ if __name__ == "__main__":
 
     cel = nn.CrossEntropyLoss()
     optimiser = optim.AdamW(model.parameters(), weight_decay=1e-4)
-    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimiser, T_max=EPOCHS)
+    #scheduler = optim.lr_scheduler.CosineAnnealingLR(optimiser, T_max=EPOCHS)
+    scheduler = None
 
     start = time.time()
-    torch.autograd.set_detect_anomaly(True, check_nan=False)
+
+    train_losses = []
+    valid_losses = []
+    test_losses = []
+
+    train_ratios = []
+    valid_ratios = []
+    test_ratios = []
+    
     for epoch in range(EPOCHS):
         model.train()
         train_loss = 0.0
@@ -80,9 +92,13 @@ if __name__ == "__main__":
             total_predictions += inputs.shape[0]
             correct_predictions += predictions.eq(labels).sum().item()
         train_loss /= num_batches
-        print(f"EPOCH {epoch}, TRAIN LOSS: {train_loss:.4f}")
-        print(f"Correct Predictions During Training: {correct_predictions}/{total_predictions}, {correct_predictions*100/total_predictions:.2f}%")
-        scheduler.step()
+        print(f"EPOCH {epoch}")
+        if scheduler:
+            print(f"Learning rate: {scheduler.get_last_lr()[0]:.5f}")
+            scheduler.step()
+        print(f"TRAIN LOSS: {train_loss:.4f} Correct Predictions During Training: {correct_predictions}/{total_predictions}, {correct_predictions*100/total_predictions:.2f}%")
+        train_losses.append(train_loss)
+        train_ratios.append(correct_predictions*100/total_predictions)
         with torch.no_grad():
             valid_loss = 0.0
             num_batches = 0
@@ -99,15 +115,14 @@ if __name__ == "__main__":
                 correct_predictions += predictions.eq(labels).sum().item()
         valid_loss /= num_batches
         ratio = correct_predictions*100/total_predictions
+        valid_losses.append(valid_loss)
+        valid_ratios.append(ratio)
         isbest = False
-        if ratio < best_valid_ratio:
+        if ratio > best_valid_ratio:
             best_valid_ratio = ratio
             best = deepcopy(model)
             isbest = True
         print(f"VALID LOSS: {valid_loss:.4f} Correct Predictions During Validation: {correct_predictions}/{total_predictions}, {ratio:.2f}%{' - Best Model!' if isbest else ''}")
-        now = time.time()
-        minutes_elapsed = (now-start)/60
-        print(f"{minutes_elapsed:.2f}m")
         # TESTING, REMOVE LATER
         with torch.no_grad():
             test_loss = 0.0
@@ -125,8 +140,13 @@ if __name__ == "__main__":
                 correct_predictions += predictions.eq(labels).sum().item()
         test_loss /= num_batches
         ratio = correct_predictions*100/total_predictions
+        test_losses.append(test_loss)
+        test_ratios.append(ratio)
         print(f"TEST LOSS: {test_loss:.4f} Correct Predictions During Testing: {correct_predictions}/{total_predictions}, {ratio:.2f}%")
         # TESTING, REMOVE LATER
+        now = time.time()
+        minutes_elapsed = (now-start)/60
+        print(f"{minutes_elapsed:.2f}m")
         if ratio > 90.0:
             break
         if minutes_elapsed >= 30:
@@ -150,4 +170,24 @@ if __name__ == "__main__":
     test_loss /= num_batches
     ratio = correct_predictions*100/total_predictions
     print(f"TEST LOSS: {test_loss:.4f} Correct Predictions During Testing: {correct_predictions}/{total_predictions}, {ratio:.2f}%")
+
+    fig, ax = plt.subplots(1, 2)
+    plt.tight_layout()
+    plt.subplots_adjust(left=0.1, right=0.95, bottom=0.1, top=0.9)
+    ax[0].plot(train_losses, label="Train Loss")
+    ax[0].plot(valid_losses, label="Valid Loss")
+    ax[0].plot(test_losses, label="Test Loss")
+    ax[0].legend()
+    ax[0].set_ylabel("Cross Entropy Loss")
+    ax[0].set_xlabel("Epochs")
+    ax[0].set_title("Loss")
+
+    ax[1].plot(train_ratios, label="Train Ratio")
+    ax[1].plot(valid_ratios, label="Valid Ratio")
+    ax[1].plot(test_ratios, label="Test Ratio")
+    ax[1].legend()
+    ax[1].set_ylabel("Ratio of Correct Predictions")
+    ax[1].set_xlabel("Epochs")
+    ax[1].set_title("Ratio of Correct Predictions")
+    fig.savefig("resnet18-cifar-fp.png") 
     torch.save(model.state_dict(), "./resnet18-fp.ckpt")

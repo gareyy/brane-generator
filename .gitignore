@@ -1,4 +1,5 @@
 data/
+keras_png_slices_data/
 uv.lock
 *.pyc
 .env
