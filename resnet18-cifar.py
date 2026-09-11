@@ -19,25 +19,22 @@ stats = ((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
 #stats = ((0.5, 0.5, 0.5), (0.5, 0.5,0.5))
 # TODO: explain data augmentation
 train_transform = v2.Compose([
-    #v2.Pad(padding=4),
-    #v2.RandomResizedCrop(size=(32, 32), antialias=True),
-    v2.AutoAugment(v2.AutoAugmentPolicy.CIFAR10),
+    #v2.AutoAugment(v2.AutoAugmentPolicy.CIFAR10),
+    v2.RandomCrop(32, padding=4),
     v2.RandomHorizontalFlip(0.5),
-    #v2.RandomVerticalFlip(0.5),
     v2.ToImage(),
     v2.ToDtype(torch.float32, scale=True),
-    #v2.Normalize(*stats), # standardise values to range [-1, 1]
+    v2.Normalize(*stats), # standardise values to range [-1, 1]
     ])
 
 test_transform = v2.Compose([
     v2.ToImage(),
     v2.ToDtype(torch.float32, scale=True),
-    #v2.Normalize(*stats), # standardise values to range [-1, 1]
+    v2.Normalize(*stats), # standardise values to range [-1, 1]
     ])
 
 classes = ('plane', 'car', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
 
-#BATCH_SIZE = 8192
 BATCH_SIZE = 1024
 EPOCHS = 500
 DISABLE_TQDM = False # change in rangpur
@@ -59,8 +56,8 @@ if __name__ == "__main__":
 
     cel = nn.CrossEntropyLoss()
     optimiser = optim.AdamW(model.parameters(), weight_decay=1e-4)
-    #scheduler = optim.lr_scheduler.CosineAnnealingLR(optimiser, T_max=EPOCHS)
-    scheduler = None
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimiser, T_max=EPOCHS)
+    #scheduler = optim.lr_scheduler.OneCycleLR(optimiser, epochs=EPOCHS, max_lr=0.01, steps_per_epoch=len(trainloader))
 
     start = time.time()
 
@@ -83,7 +80,7 @@ if __name__ == "__main__":
             logits = model(inputs)
             loss = cel(logits, labels)
             loss.backward()
-            #nn.utils.clip_grad_value_(model.parameters(), 0.1)
+            nn.utils.clip_grad_value_(model.parameters(), 0.1)
             optimiser.step()
             optimiser.zero_grad()
             train_loss += loss.item()
@@ -92,10 +89,11 @@ if __name__ == "__main__":
             total_predictions += inputs.shape[0]
             correct_predictions += predictions.eq(labels).sum().item()
         train_loss /= num_batches
+        if scheduler:
+            scheduler.step()
         print(f"EPOCH {epoch}")
         if scheduler:
-            print(f"Learning rate: {scheduler.get_last_lr()[0]:.5f}")
-            scheduler.step()
+            print(f"Learning rate: {scheduler.get_last_lr()[0]:.8f}")
         print(f"TRAIN LOSS: {train_loss:.4f} Correct Predictions During Training: {correct_predictions}/{total_predictions}, {correct_predictions*100/total_predictions:.2f}%")
         train_losses.append(train_loss)
         train_ratios.append(correct_predictions*100/total_predictions)
@@ -189,5 +187,5 @@ if __name__ == "__main__":
     ax[1].set_ylabel("Ratio of Correct Predictions")
     ax[1].set_xlabel("Epochs")
     ax[1].set_title("Ratio of Correct Predictions")
-    fig.savefig("resnet18-cifar-fp.png") 
+    fig.savefig("charts/resnet18-cifar-fp.png") 
     torch.save(model.state_dict(), "./resnet18-fp.ckpt")
