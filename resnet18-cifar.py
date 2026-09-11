@@ -17,11 +17,10 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 
 stats = ((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
 #stats = ((0.5, 0.5, 0.5), (0.5, 0.5,0.5))
-# TODO: explain data augmentation
 train_transform = v2.Compose([
     v2.RandomHorizontalFlip(0.5),
     v2.AutoAugment(v2.AutoAugmentPolicy.CIFAR10),
-    #v2.RandomCrop(32, padding=4),
+    v2.RandomCrop(32, padding=4),
     v2.ToImage(),
     v2.ToDtype(torch.float32, scale=True),
     v2.Normalize(*stats), # standardise values to range [-1, 1]
@@ -35,8 +34,8 @@ test_transform = v2.Compose([
 
 classes = ('plane', 'car', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
 
-BATCH_SIZE = 1024
-EPOCHS = 500
+BATCH_SIZE = 512
+EPOCHS = 1000 # limit for a100, but we have a time limit
 DISABLE_TQDM = False # change in rangpur
 VALID_RATIO = 0.1
 
@@ -55,10 +54,11 @@ if __name__ == "__main__":
     best_valid_ratio = -1.0
 
     cel = nn.CrossEntropyLoss()
-    optimiser = optim.SGD(model.parameters(), momentum=0.9, weight_decay=1e-4, lr=0.1)
-    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimiser, T_max=EPOCHS)
+    optimiser = optim.SGD(model.parameters(), momentum=0.9, weight_decay=5e-4, lr=0.1)
+    scheduler = optim.lr_scheduler.OneCycleLR(optimiser, epochs=EPOCHS, steps_per_epoch=len(trainloader), max_lr=0.1)
 
     start = time.time()
+    last_epoch = time.time()
 
     train_losses = []
     valid_losses = []
@@ -87,9 +87,9 @@ if __name__ == "__main__":
             _, predictions = logits.max(1)
             total_predictions += inputs.shape[0]
             correct_predictions += predictions.eq(labels).sum().item()
+            if scheduler:
+                scheduler.step()
         train_loss /= num_batches
-        if scheduler:
-            scheduler.step()
         print(f"EPOCH {epoch+1}")
         if scheduler:
             print(f"Learning rate: {scheduler.get_last_lr()[0]:.8f}")
@@ -141,7 +141,9 @@ if __name__ == "__main__":
         print(f"TEST LOSS: {test_loss:.4f} Correct Predictions During Testing: {correct_predictions}/{total_predictions}, {ratio:.2f}%")
         now = time.time()
         minutes_elapsed = (now-start)/60
-        print(f"{minutes_elapsed:.2f}m")
+        seconds_in_epoch = now-last_epoch
+        last_epoch = time.time()
+        print(f"MINUTES ELAPSED: {minutes_elapsed:.4f}m, Secs per Epoch: {seconds_in_epoch:.4f}s")
         if ratio > 90.0:
             break
         if minutes_elapsed >= 30:
