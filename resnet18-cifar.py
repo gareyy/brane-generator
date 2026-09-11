@@ -19,9 +19,9 @@ stats = ((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
 #stats = ((0.5, 0.5, 0.5), (0.5, 0.5,0.5))
 # TODO: explain data augmentation
 train_transform = v2.Compose([
-    #v2.AutoAugment(v2.AutoAugmentPolicy.CIFAR10),
-    v2.RandomCrop(32, padding=4),
     v2.RandomHorizontalFlip(0.5),
+    v2.AutoAugment(v2.AutoAugmentPolicy.CIFAR10),
+    #v2.RandomCrop(32, padding=4),
     v2.ToImage(),
     v2.ToDtype(torch.float32, scale=True),
     v2.Normalize(*stats), # standardise values to range [-1, 1]
@@ -55,9 +55,8 @@ if __name__ == "__main__":
     best_valid_ratio = -1.0
 
     cel = nn.CrossEntropyLoss()
-    optimiser = optim.AdamW(model.parameters(), weight_decay=1e-4)
+    optimiser = optim.SGD(model.parameters(), momentum=0.9, weight_decay=1e-4, lr=0.1)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimiser, T_max=EPOCHS)
-    #scheduler = optim.lr_scheduler.OneCycleLR(optimiser, epochs=EPOCHS, max_lr=0.01, steps_per_epoch=len(trainloader))
 
     start = time.time()
 
@@ -91,7 +90,7 @@ if __name__ == "__main__":
         train_loss /= num_batches
         if scheduler:
             scheduler.step()
-        print(f"EPOCH {epoch}")
+        print(f"EPOCH {epoch+1}")
         if scheduler:
             print(f"Learning rate: {scheduler.get_last_lr()[0]:.8f}")
         print(f"TRAIN LOSS: {train_loss:.4f} Correct Predictions During Training: {correct_predictions}/{total_predictions}, {correct_predictions*100/total_predictions:.2f}%")
@@ -121,7 +120,6 @@ if __name__ == "__main__":
             best = deepcopy(model)
             isbest = True
         print(f"VALID LOSS: {valid_loss:.4f} Correct Predictions During Validation: {correct_predictions}/{total_predictions}, {ratio:.2f}%{' - Best Model!' if isbest else ''}")
-        # TESTING, REMOVE LATER
         with torch.no_grad():
             test_loss = 0.0
             num_batches = 0
@@ -141,7 +139,6 @@ if __name__ == "__main__":
         test_losses.append(test_loss)
         test_ratios.append(ratio)
         print(f"TEST LOSS: {test_loss:.4f} Correct Predictions During Testing: {correct_predictions}/{total_predictions}, {ratio:.2f}%")
-        # TESTING, REMOVE LATER
         now = time.time()
         minutes_elapsed = (now-start)/60
         print(f"{minutes_elapsed:.2f}m")
