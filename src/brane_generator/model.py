@@ -4,11 +4,11 @@ class IdentityBlock(nn.Module):
         super().__init__()
         self.relu = nn.ReLU()
         self.layers = nn.Sequential(
-                    nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=1, padding=1),
-                    nn.BatchNorm2d(out_channels),
+                    nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=False),
+                    nn.BatchNorm2d(out_channels, bias=False),
                     nn.ReLU(),
-                    nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1),
-                    nn.BatchNorm2d(out_channels),
+                    nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=False),
+                    nn.BatchNorm2d(out_channels, bias=False),
                 )
     def forward(self, x):
         out = self.layers(x)
@@ -19,15 +19,15 @@ class ConvolutionBlock(nn.Module):
         super().__init__()
         self.relu = nn.ReLU()
         self.shortcut = nn.Sequential(
-                    nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=2),
-                    nn.BatchNorm2d(out_channels),
+                    nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=2, bias=False),
+                    nn.BatchNorm2d(out_channels, bias=False),
                 )
         self.layers = nn.Sequential(
-                    nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=2, padding=1),
-                    nn.BatchNorm2d(out_channels),
+                    nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=2, padding=1, bias=False),
+                    nn.BatchNorm2d(out_channels, bias=False),
                     nn.ReLU(),
-                    nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1),
-                    nn.BatchNorm2d(out_channels),
+                    nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=False),
+                    nn.BatchNorm2d(out_channels, bias=False),
                 )
     def forward(self, x):
         out = self.layers(x)
@@ -37,8 +37,8 @@ class ResnetEighteen(nn.Module):
     def __init__(self, num_classes, in_channels) -> None:
         super().__init__()
         self.layers = nn.Sequential(
-                    nn.Conv2d(in_channels, 64, kernel_size=7, stride=2, padding=1), # conv1
-                    nn.BatchNorm2d(64),
+                    nn.Conv2d(in_channels, 64, kernel_size=7, stride=2, padding=1, bias=False), # conv1
+                    nn.BatchNorm2d(64, bias=False),
                     nn.MaxPool2d(kernel_size=3, stride=2), #conv2_1
                     IdentityBlock(64, 64), #conv2_2
                     IdentityBlock(64, 64), #conv2_3
@@ -50,7 +50,7 @@ class ResnetEighteen(nn.Module):
                     IdentityBlock(512, 512), #conv5_2
                     nn.AvgPool2d(kernel_size=1),
                     nn.Flatten(),
-                    nn.Linear(512, num_classes),
+                    nn.Linear(512, num_classes, bias=False),
                 )
     def forward(self, x):
         return self.layers(x)

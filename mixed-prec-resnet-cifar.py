@@ -53,7 +53,7 @@ if __name__ == "__main__":
     testset = torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=test_transform)
     testloader = torch.utils.data.DataLoader(testset, batch_size=BATCH_SIZE, shuffle=False, num_workers=8, pin_memory=False)
     
-    model = ResnetEighteen(len(classes),3).to(device).to(dtype=torch.float32)
+    model = ResnetEighteen(len(classes),3).to(device)
     n_params = sum(p.numel() for p in model.parameters())
     print(n_params)
     best = deepcopy(model)
@@ -61,7 +61,6 @@ if __name__ == "__main__":
 
     cel = nn.CrossEntropyLoss()
     optimiser = optim.SGD(model.parameters(), momentum=0.9, weight_decay=1e-4, lr=0.1)
-    #scheduler = optim.lr_scheduler.CosineAnnealingLR(optimiser, EPOCHS, eta_min=0.01)
     scheduler = optim.lr_scheduler.MultiStepLR(optimiser, gamma=0.1, milestones=[EPOCHS//2, (3*EPOCHS)//4])
     scheduler_step_per_batch = False
 
@@ -75,6 +74,8 @@ if __name__ == "__main__":
     train_ratios = []
     valid_ratios = []
     test_ratios = []
+
+    scaler = torch.amp.GradScaler()
     
     for epoch in range(EPOCHS):
         model.train()
@@ -84,11 +85,12 @@ if __name__ == "__main__":
         total_predictions = 0
         for i, (inputs, labels) in tqdm(enumerate(trainloader), disable=DISABLE_TQDM, total=len(trainloader)):
             inputs, labels = inputs.to(device), labels.to(device)
-            logits = model(inputs)
-            loss = cel(logits, labels)
-            loss.backward()
+            with torch.amp.autocast(device):
+                logits = model(inputs)
+                loss = cel(logits, labels)
+            scaler.scale(loss).backward()
             nn.utils.clip_grad_value_(model.parameters(), 0.1)
-            optimiser.step()
+            scaler.step(optimiser)
             optimiser.zero_grad()
             train_loss += loss.item()
             num_batches += 1
@@ -97,6 +99,7 @@ if __name__ == "__main__":
             correct_predictions += predictions.eq(labels).sum().item()
             if scheduler and scheduler_step_per_batch:
                 scheduler.step()
+            scaler.update()
         train_loss /= num_batches
         print(f"EPOCH {epoch+1}")
         if scheduler:
