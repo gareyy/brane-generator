@@ -8,6 +8,11 @@ import time
 from copy import deepcopy
 from brane_generator.model import ResnetEighteen
 import matplotlib.pyplot as plt
+import argparse
+import brane_generator.alternate
+
+ap = argparse.ArgumentParser()
+ap.add_argument("chartoutput", type=str, default="charts/resnet18-cifar-fp.png")
 
 torch.manual_seed(67)
 
@@ -35,11 +40,12 @@ test_transform = v2.Compose([
 classes = ('plane', 'car', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
 
 BATCH_SIZE = 512
-EPOCHS = 1000 # limit for a100, but we have a time limit
+EPOCHS = 500 # limit for a100, but we have a time limit
 DISABLE_TQDM = False # change in rangpur
-VALID_RATIO = 0.1
+VALID_RATIO = 0.01
 
 if __name__ == "__main__":
+    args = ap.parse_args()
     dataset = torchvision.datasets.CIFAR10(root='./data', train=True, download=True, transform=train_transform)
     trainset, validset = torch.utils.data.random_split(dataset, [1-VALID_RATIO, VALID_RATIO])
     trainloader = torch.utils.data.DataLoader(trainset, batch_size=BATCH_SIZE, shuffle=True, num_workers=8, pin_memory=False)
@@ -49,13 +55,16 @@ if __name__ == "__main__":
     testloader = torch.utils.data.DataLoader(testset, batch_size=BATCH_SIZE, shuffle=False, num_workers=8, pin_memory=False)
     
     model = ResnetEighteen(len(classes),3).to(device)
-    print(model)
+    n_params = sum(p.numel() for p in model.parameters())
+    print(n_params)
     best = deepcopy(model)
     best_valid_ratio = -1.0
 
     cel = nn.CrossEntropyLoss()
-    optimiser = optim.SGD(model.parameters(), momentum=0.9, weight_decay=5e-4, lr=0.1)
-    scheduler = optim.lr_scheduler.OneCycleLR(optimiser, epochs=EPOCHS, steps_per_epoch=len(trainloader), max_lr=0.1)
+    optimiser = optim.SGD(model.parameters(), momentum=0.9, weight_decay=1e-4, lr=0.1)
+    #scheduler = optim.lr_scheduler.CosineAnnealingLR(optimiser, EPOCHS, eta_min=0.01)
+    scheduler = optim.lr_scheduler.MultiStepLR(optimiser, gamma=0.1, milestones=[EPOCHS//2, (3*EPOCHS)//4])
+    scheduler_step_per_batch = False
 
     start = time.time()
     last_epoch = time.time()
@@ -87,12 +96,14 @@ if __name__ == "__main__":
             _, predictions = logits.max(1)
             total_predictions += inputs.shape[0]
             correct_predictions += predictions.eq(labels).sum().item()
-            if scheduler:
+            if scheduler and scheduler_step_per_batch:
                 scheduler.step()
         train_loss /= num_batches
         print(f"EPOCH {epoch+1}")
         if scheduler:
             print(f"Learning rate: {scheduler.get_last_lr()[0]:.8f}")
+        if scheduler and not scheduler_step_per_batch:
+            scheduler.step()
         print(f"TRAIN LOSS: {train_loss:.4f} Correct Predictions During Training: {correct_predictions}/{total_predictions}, {correct_predictions*100/total_predictions:.2f}%")
         train_losses.append(train_loss)
         train_ratios.append(correct_predictions*100/total_predictions)
@@ -186,5 +197,5 @@ if __name__ == "__main__":
     ax[1].set_ylabel("Ratio of Correct Predictions")
     ax[1].set_xlabel("Epochs")
     ax[1].set_title("Ratio of Correct Predictions")
-    fig.savefig("charts/resnet18-cifar-fp.png") 
+    fig.savefig(args.chartoutput) 
     torch.save(model.state_dict(), "./resnet18-fp.ckpt")

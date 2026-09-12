@@ -50,8 +50,7 @@ class ResnetEighteen(nn.Module):
                     IdentityBlock(512, 512), #conv5_2
                     nn.AvgPool2d(kernel_size=1),
                     nn.Flatten(),
-                    nn.Linear(512, 1000),
-                    nn.Linear(1000, num_classes),
+                    nn.Linear(512, num_classes),
                 )
     def forward(self, x):
         return self.layers(x)
