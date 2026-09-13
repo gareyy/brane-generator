@@ -39,7 +39,7 @@ test_transform = v2.Compose([
 classes = ('plane', 'car', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
 
 BATCH_SIZE = 512
-EPOCHS = 500 # limit for a100, but we have a time limit
+EPOCHS = 100 # limit for a100, but we have a time limit
 DISABLE_TQDM = False # change in rangpur
 VALID_RATIO = 0.01
 
@@ -157,9 +157,9 @@ if __name__ == "__main__":
         seconds_in_epoch = now-last_epoch
         last_epoch = time.time()
         print(f"MINUTES ELAPSED: {minutes_elapsed:.4f}m, Secs per Epoch: {seconds_in_epoch:.4f}s")
-        if ratio > 90.0:
+        if ratio > 94.0:
             break
-        if minutes_elapsed >= 30:
+        if minutes_elapsed >= 10:
             break
 
     print("DOING TEST DATASET")
