@@ -4,3 +4,4 @@ uv.lock
 *.pyc
 .env
 *.ckpt
+.ipynb_checkpoints/

@@ -51,6 +51,7 @@ class ResnetEighteen(nn.Module):
                     nn.AvgPool2d(kernel_size=1),
                     nn.Flatten(),
                     nn.Linear(512, num_classes, bias=False),
+                    nn.Softmax(dim=-1),
                 )
     def forward(self, x):
         return self.layers(x)

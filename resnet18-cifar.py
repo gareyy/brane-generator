@@ -37,7 +37,7 @@ test_transform = v2.Compose([
 classes = ('plane', 'car', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
 
 BATCH_SIZE = 512
-EPOCHS = 500 # limit for a100, but we have a time limit
+EPOCHS = 100 # limit for a100, but we have a time limit
 DISABLE_TQDM = False # change in rangpur
 VALID_RATIO = 0.1
 
@@ -58,11 +58,11 @@ if __name__ == "__main__":
     best_valid_ratio = -1.0
 
     cel = nn.CrossEntropyLoss()
-    optimiser = optim.SGD(model.parameters(), momentum=0.9, weight_decay=5e-4, lr=0.1)
+    optimiser = optim.SGD(model.parameters(), momentum=0.9, weight_decay=5e-4, lr=0.01)
     #optimiser = optim.Adam(model.parameters(), lr=0.01)
-    #scheduler = optim.lr_scheduler.CosineAnnealingLR(optimiser, EPOCHS, eta_min=0.01)
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimiser, EPOCHS, eta_min=1e-4)
     #scheduler = optim.lr_scheduler.MultiStepLR(optimiser, gamma=0.1, milestones=[EPOCHS//2, (3*EPOCHS)//4])
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimiser, patience=20)
+    #scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimiser, patience=20)
     scheduler_step_per_batch = False
 
     start = time.time()
