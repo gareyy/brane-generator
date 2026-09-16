@@ -55,3 +55,26 @@ class ResnetEighteen(nn.Module):
                 )
     def forward(self, x):
         return self.layers(x)
+
+class ResnetDiscriminator(nn.Module):
+    def __init__(self, num_classes, in_channels) -> None:
+        super().__init__()
+        self.layers = nn.Sequential(
+                    nn.Conv2d(in_channels, 64, kernel_size=7, stride=2, padding=1, bias=False), # conv1
+                    nn.BatchNorm2d(64, bias=False),
+                    nn.MaxPool2d(kernel_size=3, stride=2), #conv2_1
+                    IdentityBlock(64, 64), #conv2_2
+                    IdentityBlock(64, 64), #conv2_3
+                    ConvolutionBlock(64, 128), #conv3_1
+                    IdentityBlock(128, 128), #conv3_2
+                    ConvolutionBlock(128, 256), #conv4_1
+                    IdentityBlock(256, 256), #conv4_2
+                    ConvolutionBlock(256, 512), #conv5_1
+                    IdentityBlock(512, 512), #conv5_2
+                    nn.AvgPool2d(kernel_size=8),
+                    nn.Flatten(),
+                    nn.Linear(512, num_classes, bias=False),
+                    nn.Softmax(dim=-1),
+                )
+    def forward(self, x):
+        return self.layers(x)

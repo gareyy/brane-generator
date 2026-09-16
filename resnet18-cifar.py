@@ -6,7 +6,7 @@ from torchvision.transforms import v2
 from tqdm import tqdm
 import time
 from copy import deepcopy
-from brane_generator.model import ResnetEighteen
+from brane_generator.resnet import ResnetEighteen
 import matplotlib.pyplot as plt
 import argparse
 

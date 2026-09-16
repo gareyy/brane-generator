@@ -10,6 +10,7 @@ requires-python = ">=3.11"
 dependencies = [
     "jupyterlab>=4.6.3",
     "jupyterlab-vim>=4.1.4",
+    "kitcat>=2.0.2",
     "matplotlib>=3.11.1",
     "torch>=2.14.0",
     "torchcodec>=0.16.0",
