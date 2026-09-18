@@ -2,12 +2,13 @@ import torch
 from torch.utils.data import DataLoader
 from brane_generator.dataset import BraneDataset, dataslice
 from torchvision.transforms import v2
+import torchvision.utils as vis_utils
 import matplotlib.pyplot as plt
-from brane_generator.resnet import ResnetDiscriminator
-from brane_generator.generator import Generator
+from brane_generator.generator import Generator, Discriminator
 import torch.nn as nn
 import torch.optim as optim
 from tqdm import tqdm
+import numpy as np
 plt.switch_backend("module://kitcat")
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -20,12 +21,14 @@ for reference: how to plot a tensor image
 plt.imshow(np.transpose(inputtensor, (1, 2, 0)), cmap="grey")
 """
 BATCH_SIZE = 64
-NOISE_DIM = 100
+NOISE_DIM = 128
 OUTPUT_SIDE = 256
 OUTPUT_CHANNELS = 3
-LEARNING_RATE = 1e-4
+LEARNING_RATE = 1e-2
+VIS_BATCH = 16
+VIS_ROWS = int(np.sqrt(VIS_BATCH))
 
-NUM_EPOCHS = 1
+NUM_EPOCHS = 10
 
 IS_REAL = 1.0
 IS_FAKE = 0.0
@@ -33,10 +36,8 @@ IS_FAKE = 0.0
 train = BraneDataset("keras_png_slices_data", dataslice.CTRAIN, transform=image_transform)
 trainloader = DataLoader(train, batch_size=BATCH_SIZE, shuffle=True, num_workers=8)
 if __name__ == "__main__":
-
     generator = Generator(NOISE_DIM, OUTPUT_SIDE, OUTPUT_CHANNELS).to(device)
-    discriminator = ResnetDiscriminator(1, OUTPUT_CHANNELS).to(device)
-
+    discriminator = Discriminator(OUTPUT_SIDE, OUTPUT_CHANNELS).to(device)
     loss = nn.BCEWithLogitsLoss()
     optim_gen = optim.AdamW(generator.parameters(), lr=LEARNING_RATE)
     optim_dis = optim.AdamW(discriminator.parameters(), lr=LEARNING_RATE)
@@ -79,6 +80,7 @@ if __name__ == "__main__":
             gen_loss = loss(outputs, labels)
             gen_loss.backward()
             optim_gen.step()
+
             real_loss_sum += real_loss.detach().item()
             fake_loss_sum += fake_loss.detach().item()
             gen_loss_sum += gen_loss.detach().item()
@@ -86,9 +88,22 @@ if __name__ == "__main__":
             D_gx_1_sum += D_gx_1
             D_gx_2_sum += D_gx_2
             batches_done += 1
-        print(f"""Discriminator Loss:
+            #print(f"{real_loss.detach().item()}, {fake_loss.detach().item()}, {gen_loss.detach().item()}, {D_x}, {D_gx_1}, {D_gx_2}")
+        print(f"""EPOCH {e+1}/{NUM_EPOCHS}
+Discriminator Loss:
 Real Loss: {real_loss_sum/batches_done:.5f}
 Fake Loss: {fake_loss_sum/batches_done:.5f}
 Generator Loss: {gen_loss_sum/batches_done:.5f}
 Avg discriminator prediction on real images: {D_x_sum/batches_done:.4f}
 Avg discriminator prediction on fake images: {D_gx_1_sum/batches_done:.4f} / {D_gx_2_sum/batches_done:.4f}""")
+        with torch.no_grad():
+            generator.eval()
+            noise = torch.randn(VIS_BATCH, NOISE_DIM, device=device)
+            fake_image = generator(noise)
+            fig, ax = plt.subplots()
+            fig.tight_layout()
+            ax.imshow(np.transpose(vis_utils.make_grid(fake_image[:VIS_BATCH], padding=2, normalize=True, nrow=VIS_ROWS).cpu(),(1,2,0)))
+            ax.set_xticks([])
+            ax.set_yticks([])
+            plt.show()
+        generator.train()
