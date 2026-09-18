@@ -9,6 +9,7 @@ import torch.nn as nn
 import torch.optim as optim
 from tqdm import tqdm
 import numpy as np
+from scipy import linalg
 plt.switch_backend("module://kitcat")
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -16,17 +17,33 @@ image_transform = v2.Compose([
     v2.ToImage(),
     v2.ToDtype(torch.float32, scale=True),
     ])
-"""
-for reference: how to plot a tensor image
-plt.imshow(np.transpose(inputtensor, (1, 2, 0)), cmap="grey")
-"""
+
 BATCH_SIZE = 64
 NOISE_DIM = 128
 OUTPUT_SIDE = 256
 OUTPUT_CHANNELS = 1
-LEARNING_RATE = 1e-2
+LEARNING_RATE = 1e-3
 VIS_BATCH = 4
 VIS_ROWS = int(np.sqrt(VIS_BATCH))
+
+# GAN metrics implementations adapted from https://medium.com/@heyamit10/pytorch-implementation-of-common-gan-metrics-86f993f6e737
+def calc_frechet_inception(real_logits, fake_logits):
+    r_mu = real_logits.mean(axis=0)
+    r_sigma = torch.cov(real_logits, correction=0)
+    f_mu = fake_logits.mean(axis=0)
+    f_sigma = torch.cov(fake_logits, correction=0)
+    covmean = torch.sqrt(r_sigma @ f_sigma)
+    diff = r_mu - f_mu
+    return diff.dot(diff) + torch.trace(f_sigma + r_sigma - 2* covmean)
+
+def calc_kernel_inception(real_logits, fake_logits):
+    gamma = 1.0/real_logits.shape[1]
+    coef = 1
+    degree = 3
+    kernel_rr = (gamma * real_logits @ real_logits.T + coef) ** degree
+    kernel_ff = (gamma * fake_logits @ fake_logits.T + coef) ** degree
+    kernel_rf = (gamma * real_logits @ fake_logits.T + coef) ** degree
+    return kernel_rr.mean() + kernel_ff.mean() - 2*kernel_rf.mean()
 
 NUM_EPOCHS = 30
 
@@ -35,13 +52,13 @@ IS_FAKE = 0.0
 
 train = BraneDataset("keras_png_slices_data", transform=image_transform)
 trainloader = DataLoader(train, batch_size=BATCH_SIZE, shuffle=True, num_workers=8)
-sampler = RandomSampler(train, num_samples=VIS_BATCH)
-randomsampler = DataLoader(train, sampler=sampler, batch_size=VIS_BATCH, num_workers=8)
+sampler = RandomSampler(train, num_samples=BATCH_SIZE)
+randomsampler = DataLoader(train, sampler=sampler, batch_size=BATCH_SIZE, num_workers=8)
 if __name__ == "__main__":
     generator = Generator(NOISE_DIM, OUTPUT_SIDE, OUTPUT_CHANNELS).to(device)
     discriminator = Discriminator(OUTPUT_SIDE, OUTPUT_CHANNELS).to(device)
     loss = nn.BCEWithLogitsLoss()
-    optim_gen = optim.AdamW(generator.parameters(), lr=LEARNING_RATE)
+    optim_gen = optim.AdamW(generator.parameters(), lr=LEARNING_RATE*10)
     optim_dis = optim.AdamW(discriminator.parameters(), lr=LEARNING_RATE)
 
     num_steps = 0
@@ -65,7 +82,7 @@ if __name__ == "__main__":
             real_loss.backward()
 
             # fake batch train
-            noise = torch.randn(BATCH_SIZE, NOISE_DIM, device=device)
+            noise = torch.randn(images.shape[0], NOISE_DIM, device=device)
             fake_images = generator(noise)
             labels.fill_(IS_FAKE)
             outputs = discriminator(fake_images.detach())
@@ -91,16 +108,10 @@ if __name__ == "__main__":
             D_gx_2_sum += D_gx_2
             batches_done += 1
             #print(f"{real_loss.detach().item()}, {fake_loss.detach().item()}, {gen_loss.detach().item()}, {D_x}, {D_gx_1}, {D_gx_2}")
-        print(f"""EPOCH {e+1}/{NUM_EPOCHS}
-Discriminator Loss:
-Real Loss: {real_loss_sum/batches_done:.5f}
-Fake Loss: {fake_loss_sum/batches_done:.5f}
-Generator Loss: {gen_loss_sum/batches_done:.5f}
-Avg discriminator prediction on real images: {D_x_sum/batches_done:.4f}
-Avg discriminator prediction on fake images: {D_gx_1_sum/batches_done:.4f} / {D_gx_2_sum/batches_done:.4f}""")
         with torch.no_grad():
             generator.eval()
-            noise = torch.randn(VIS_BATCH, NOISE_DIM, device=device)
+            discriminator.eval()
+            noise = torch.randn(BATCH_SIZE, NOISE_DIM, device=device)
             fake_image = generator(noise)
             fig, ax = plt.subplots(1, 2)
             fig.tight_layout()
@@ -112,7 +123,7 @@ Avg discriminator prediction on fake images: {D_gx_1_sum/batches_done:.4f} / {D_
             )
             ax[0].set_xticks([])
             ax[0].set_yticks([])
-            real_image = next(iter(randomsampler))
+            real_image = next(iter(randomsampler)).to(device)
             ax[1].imshow(
                 np.transpose(vis_utils.make_grid(real_image[:VIS_BATCH], padding=2, normalize=True, nrow=VIS_ROWS).cpu(),
                 (1,2,0))
@@ -120,4 +131,18 @@ Avg discriminator prediction on fake images: {D_gx_1_sum/batches_done:.4f} / {D_
             ax[1].set_xticks([])
             ax[1].set_yticks([])
             plt.show()
-        generator.train()
+            fake_logits = discriminator(fake_image)
+            real_logits = discriminator(real_image)
+            fid = calc_frechet_inception(real_logits, fake_logits)
+            rid = calc_kernel_inception(real_logits, fake_logits)
+            print(f"""EPOCH {e+1}/{NUM_EPOCHS}
+Discriminator Loss:
+Real Loss: {real_loss_sum/batches_done:.5f}
+Fake Loss: {fake_loss_sum/batches_done:.5f}
+Generator Loss: {gen_loss_sum/batches_done:.5f}
+Avg discriminator prediction on real images: {D_x_sum/batches_done:.4f}
+Avg discriminator prediction on fake images: {D_gx_1_sum/batches_done:.4f} / {D_gx_2_sum/batches_done:.4f}
+Frechet Inception Distance: {fid:.5f}
+Kernel Inception Distance: {rid:.5f}""")
+            generator.train()
+            discriminator.train()
