@@ -12,6 +12,7 @@ dependencies = [
     "jupyterlab-vim>=4.1.4",
     "kitcat>=2.0.2",
     "matplotlib>=3.11.1",
+    "scipy>=1.17.1",
     "torch>=2.14.0",
     "torchcodec>=0.16.0",
     "torchvision>=0.29.0",

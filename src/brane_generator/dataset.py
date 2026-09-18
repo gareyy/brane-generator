@@ -8,31 +8,26 @@ TEST_SLICES = "keras_png_slices_test"
 TRAIN_SLICES = "keras_png_slices_train"
 VALID_SLICES = "keras_png_slices_validate"
 
-class dataslice(Enum):
-    CTEST = "test"
-    CTRAIN = "train"
-    CVALID = "valid"
-
 class BraneDataset(Dataset):
-    def __init__(self, images_dir, ds: dataslice, transform=None) -> None:
-        assert ds in [dataslice.CTEST, dataslice.CTRAIN, dataslice.CVALID], "Invalid data type!"
+    def __init__(self, images_dir, transform=None) -> None:
         self.root_dir = images_dir
-        match ds:
-            case dataslice.CTEST:
-                self.images_dir = os.path.join(self.root_dir, TEST_SLICES)
-            case dataslice.CTRAIN:
-                self.images_dir = os.path.join(self.root_dir, TRAIN_SLICES)
-            case _:
-                self.images_dir = os.path.join(self.root_dir, VALID_SLICES)
         self.transform = transform
-        self.imagelist = os.listdir(self.images_dir)
-        self.dataslice = ds
+        self.imagelist = []
+        for dirpath, _, filenames in os.walk(os.path.join(self.root_dir, TEST_SLICES)):
+            for f in filenames:
+                self.imagelist.append(os.path.abspath(os.path.join(dirpath, f)))
+        for dirpath, _, filenames in os.walk(os.path.join(self.root_dir, TRAIN_SLICES)):
+            for f in filenames:
+                self.imagelist.append(os.path.abspath(os.path.join(dirpath, f)))
+        for dirpath, _, filenames in os.walk(os.path.join(self.root_dir, VALID_SLICES)):
+            for f in filenames:
+                self.imagelist.append(os.path.abspath(os.path.join(dirpath, f)))
 
     def __len__(self):
         return len(self.imagelist)
 
     def __getitem__(self, index):
-        img_path = os.path.join(self.images_dir, self.imagelist[index])
+        img_path = self.imagelist[index]
         image = decode_image(img_path, mode='GRAY')
         if self.transform:
             image = self.transform(image)
