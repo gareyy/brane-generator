@@ -1,5 +1,5 @@
 import torch
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, RandomSampler
 from brane_generator.dataset import BraneDataset, dataslice
 from torchvision.transforms import v2
 import torchvision.utils as vis_utils
@@ -23,9 +23,9 @@ plt.imshow(np.transpose(inputtensor, (1, 2, 0)), cmap="grey")
 BATCH_SIZE = 64
 NOISE_DIM = 128
 OUTPUT_SIDE = 256
-OUTPUT_CHANNELS = 3
+OUTPUT_CHANNELS = 1
 LEARNING_RATE = 1e-2
-VIS_BATCH = 16
+VIS_BATCH = 9
 VIS_ROWS = int(np.sqrt(VIS_BATCH))
 
 NUM_EPOCHS = 10
@@ -35,6 +35,8 @@ IS_FAKE = 0.0
 
 train = BraneDataset("keras_png_slices_data", dataslice.CTRAIN, transform=image_transform)
 trainloader = DataLoader(train, batch_size=BATCH_SIZE, shuffle=True, num_workers=8)
+sampler = RandomSampler(train, num_samples=VIS_BATCH)
+randomsampler = DataLoader(train, sampler=sampler, batch_size=VIS_BATCH, num_workers=8)
 if __name__ == "__main__":
     generator = Generator(NOISE_DIM, OUTPUT_SIDE, OUTPUT_CHANNELS).to(device)
     discriminator = Discriminator(OUTPUT_SIDE, OUTPUT_CHANNELS).to(device)
@@ -100,10 +102,14 @@ Avg discriminator prediction on fake images: {D_gx_1_sum/batches_done:.4f} / {D_
             generator.eval()
             noise = torch.randn(VIS_BATCH, NOISE_DIM, device=device)
             fake_image = generator(noise)
-            fig, ax = plt.subplots()
+            fig, ax = plt.subplots(1, 2)
             fig.tight_layout()
-            ax.imshow(np.transpose(vis_utils.make_grid(fake_image[:VIS_BATCH], padding=2, normalize=True, nrow=VIS_ROWS).cpu(),(1,2,0)))
-            ax.set_xticks([])
-            ax.set_yticks([])
+            ax[0].imshow(np.transpose(vis_utils.make_grid(fake_image[:VIS_BATCH], padding=2, normalize=True, nrow=VIS_ROWS).cpu(),(1,2,0)))
+            ax[0].set_xticks([])
+            ax[0].set_yticks([])
+            real_image = next(iter(randomsampler))
+            ax[1].imshow(np.transpose(vis_utils.make_grid(real_image[:VIS_BATCH], padding=2, normalize=True, nrow=VIS_ROWS).cpu(),(1,2,0)))
+            ax[1].set_xticks([])
+            ax[1].set_yticks([])
             plt.show()
         generator.train()

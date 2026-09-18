@@ -33,7 +33,7 @@ class BraneDataset(Dataset):
 
     def __getitem__(self, index):
         img_path = os.path.join(self.images_dir, self.imagelist[index])
-        image = decode_image(img_path)
+        image = decode_image(img_path, mode='GRAY')
         if self.transform:
             image = self.transform(image)
         return image
