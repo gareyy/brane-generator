@@ -13,8 +13,6 @@ import argparse
 ap = argparse.ArgumentParser()
 ap.add_argument("chartoutput", type=str, default="charts/resnet18-cifar-fp.png")
 
-torch.manual_seed(67)
-
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 # from https://docs.pytorch.org/tutorials/beginner/blitz/cifar10_tutorial.html
@@ -22,12 +20,11 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 stats = ((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
 #stats = ((0.5, 0.5, 0.5), (0.5, 0.5,0.5))
 train_transform = v2.Compose([
-    v2.RandomHorizontalFlip(0.5),
-    v2.AutoAugment(v2.AutoAugmentPolicy.CIFAR10),
-    v2.RandomCrop(32, padding=4),
     v2.ToImage(),
     v2.ToDtype(torch.float32, scale=True),
     v2.Normalize(*stats), # standardise values to range [-1, 1]
+    v2.RandomHorizontalFlip(0.5),
+    v2.RandomCrop(32, padding=4),
     ])
 
 test_transform = v2.Compose([
@@ -39,29 +36,34 @@ test_transform = v2.Compose([
 classes = ('plane', 'car', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
 
 BATCH_SIZE = 512
+NUM_WORKERS = 8
 EPOCHS = 100 # limit for a100, but we have a time limit
 DISABLE_TQDM = False # change in rangpur
-VALID_RATIO = 0.01
+VALID_RATIO = 0.1
 
 if __name__ == "__main__":
     args = ap.parse_args()
     dataset = torchvision.datasets.CIFAR10(root='./data', train=True, download=True, transform=train_transform)
     trainset, validset = torch.utils.data.random_split(dataset, [1-VALID_RATIO, VALID_RATIO])
-    trainloader = torch.utils.data.DataLoader(trainset, batch_size=BATCH_SIZE, shuffle=True, num_workers=8, pin_memory=False)
-    validloader = torch.utils.data.DataLoader(validset, batch_size=BATCH_SIZE, shuffle=True, num_workers=8, pin_memory=False)
+    trainloader = torch.utils.data.DataLoader(trainset, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKERS, pin_memory=True)
+    validloader = torch.utils.data.DataLoader(validset, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKERS, pin_memory=False)
 
     testset = torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=test_transform)
-    testloader = torch.utils.data.DataLoader(testset, batch_size=BATCH_SIZE, shuffle=False, num_workers=8, pin_memory=False)
+    testloader = torch.utils.data.DataLoader(testset, batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_WORKERS, pin_memory=False)
     
-    model = ResnetEighteen(len(classes),3).to(device)
+    model = ResnetEighteen(len(classes),3).to(device).to(dtype=torch.float32)
+    #model = ResNet18().to(device)
     n_params = sum(p.numel() for p in model.parameters())
     print(n_params)
     best = deepcopy(model)
     best_valid_ratio = -1.0
 
     cel = nn.CrossEntropyLoss()
-    optimiser = optim.SGD(model.parameters(), momentum=0.9, weight_decay=1e-4, lr=0.1)
-    scheduler = optim.lr_scheduler.MultiStepLR(optimiser, gamma=0.1, milestones=[EPOCHS//2, (3*EPOCHS)//4])
+    optimiser = optim.SGD(model.parameters(), momentum=0.9, weight_decay=5e-4, lr=0.01)
+    #optimiser = optim.AdamW(model.parameters(), lr=0.01)
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimiser, EPOCHS, eta_min=1e-4)
+    #scheduler = optim.lr_scheduler.MultiStepLR(optimiser, gamma=0.1, milestones=[EPOCHS//3, (2*EPOCHS)//3])
+    #scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimiser, patience=20)
     scheduler_step_per_batch = False
 
     start = time.time()
@@ -74,8 +76,6 @@ if __name__ == "__main__":
     train_ratios = []
     valid_ratios = []
     test_ratios = []
-
-    scaler = torch.amp.GradScaler()
     
     for epoch in range(EPOCHS):
         model.train()
@@ -88,27 +88,26 @@ if __name__ == "__main__":
             with torch.amp.autocast(device):
                 logits = model(inputs)
                 loss = cel(logits, labels)
-            scaler.scale(loss).backward()
-            nn.utils.clip_grad_value_(model.parameters(), 0.1)
-            scaler.step(optimiser)
             optimiser.zero_grad()
+            loss.backward()
+            optimiser.step()
             train_loss += loss.item()
             num_batches += 1
             _, predictions = logits.max(1)
             total_predictions += inputs.shape[0]
             correct_predictions += predictions.eq(labels).sum().item()
-            if scheduler and scheduler_step_per_batch:
+            if scheduler and scheduler_step_per_batch and not isinstance(scheduler, optim.lr_scheduler.ReduceLROnPlateau):
                 scheduler.step()
-            scaler.update()
         train_loss /= num_batches
         print(f"EPOCH {epoch+1}")
         if scheduler:
             print(f"Learning rate: {scheduler.get_last_lr()[0]:.8f}")
-        if scheduler and not scheduler_step_per_batch:
+        if scheduler and not scheduler_step_per_batch and not isinstance(scheduler, optim.lr_scheduler.ReduceLROnPlateau):
             scheduler.step()
         print(f"TRAIN LOSS: {train_loss:.4f} Correct Predictions During Training: {correct_predictions}/{total_predictions}, {correct_predictions*100/total_predictions:.2f}%")
         train_losses.append(train_loss)
         train_ratios.append(correct_predictions*100/total_predictions)
+        model.eval()
         with torch.no_grad():
             valid_loss = 0.0
             num_batches = 0
@@ -116,10 +115,12 @@ if __name__ == "__main__":
             total_predictions = 0
             for i, (inputs, labels) in enumerate(validloader):
                 inputs, labels = inputs.to(device), labels.to(device)
-                logits = model(inputs)
-                loss = cel(logits, labels)
+                with torch.amp.autocast(device):
+                    logits = model(inputs)
+                    loss = cel(logits, labels)
                 valid_loss += loss.item()
                 num_batches += 1
+                logits = nn.functional.softmax(logits, dim=-1)
                 _, predictions = logits.max(1)
                 total_predictions += inputs.shape[0]
                 correct_predictions += predictions.eq(labels).sum().item()
@@ -133,6 +134,8 @@ if __name__ == "__main__":
             best = deepcopy(model)
             isbest = True
         print(f"VALID LOSS: {valid_loss:.4f} Correct Predictions During Validation: {correct_predictions}/{total_predictions}, {ratio:.2f}%{' - Best Model!' if isbest else ''}")
+        if scheduler and not scheduler_step_per_batch and isinstance(scheduler, optim.lr_scheduler.ReduceLROnPlateau):
+            scheduler.step(valid_loss)
         with torch.no_grad():
             test_loss = 0.0
             num_batches = 0
@@ -140,10 +143,12 @@ if __name__ == "__main__":
             total_predictions = 0
             for i, (inputs, labels) in enumerate(testloader):
                 inputs, labels = inputs.to(device), labels.to(device)
-                logits = model(inputs)
-                loss = cel(logits, labels)
+                with torch.amp.autocast(device):
+                    logits = model(inputs)
+                    loss = cel(logits, labels)
                 test_loss += loss.item()
                 num_batches += 1
+                logits = nn.functional.softmax(logits, dim=-1)
                 _, predictions = logits.max(1)
                 total_predictions += inputs.shape[0]
                 correct_predictions += predictions.eq(labels).sum().item()
@@ -173,6 +178,7 @@ if __name__ == "__main__":
             logits = model(inputs)
             loss = cel(logits, labels)
             test_loss += loss.item()
+            logits = nn.functional.softmax(logits, dim=-1)
             num_batches += 1
             _, predictions = logits.max(1)
             total_predictions += inputs.shape[0]

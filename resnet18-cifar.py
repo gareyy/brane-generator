@@ -7,7 +7,6 @@ from tqdm import tqdm
 import time
 from copy import deepcopy
 from brane_generator.resnet import ResnetEighteen
-from brane_generator.gfg_imp import ResNet18
 import matplotlib.pyplot as plt
 import argparse
 
