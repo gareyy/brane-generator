@@ -4,15 +4,16 @@ class IdentityBlock(nn.Module):
         super().__init__()
         self.relu = nn.ReLU()
         self.layers = nn.Sequential(
-                    nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=False),
-                    nn.BatchNorm2d(out_channels, bias=False),
+                    nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=1, padding=1),
+                    nn.BatchNorm2d(out_channels),
                     nn.ReLU(),
                     nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=False),
-                    nn.BatchNorm2d(out_channels, bias=False),
+                    nn.BatchNorm2d(out_channels),
                 )
     def forward(self, x):
         out = self.layers(x)
-        return self.relu(out + x)
+        out += x
+        return self.relu(out)
 
 class ConvolutionBlock(nn.Module):
     def __init__(self, in_channels, out_channels) -> None:
@@ -20,26 +21,28 @@ class ConvolutionBlock(nn.Module):
         self.relu = nn.ReLU()
         self.shortcut = nn.Sequential(
                     nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=2, bias=False),
-                    nn.BatchNorm2d(out_channels, bias=False),
+                    nn.BatchNorm2d(out_channels),
                 )
         self.layers = nn.Sequential(
                     nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=2, padding=1, bias=False),
-                    nn.BatchNorm2d(out_channels, bias=False),
+                    nn.BatchNorm2d(out_channels),
                     nn.ReLU(),
                     nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=False),
-                    nn.BatchNorm2d(out_channels, bias=False),
+                    nn.BatchNorm2d(out_channels),
                 )
     def forward(self, x):
         out = self.layers(x)
-        return self.relu(out + self.shortcut(x))
+        out += self.shortcut(x)
+        return self.relu(out)
 
 class ResnetEighteen(nn.Module):
     def __init__(self, num_classes, in_channels) -> None:
         super().__init__()
         self.layers = nn.Sequential(
-                    nn.Conv2d(in_channels, 64, kernel_size=7, stride=2, padding=1, bias=False), # conv1
+                    nn.Conv2d(in_channels, 64, kernel_size=7, stride=1, padding=1, bias=False), # conv1
                     nn.BatchNorm2d(64, bias=False),
-                    nn.MaxPool2d(kernel_size=3, stride=2), #conv2_1
+                    #nn.MaxPool2d(kernel_size=3, stride=2), #conv2_1
+                    nn.ReLU(),
                     IdentityBlock(64, 64), #conv2_2
                     IdentityBlock(64, 64), #conv2_3
                     ConvolutionBlock(64, 128), #conv3_1
@@ -48,33 +51,15 @@ class ResnetEighteen(nn.Module):
                     IdentityBlock(256, 256), #conv4_2
                     ConvolutionBlock(256, 512), #conv5_1
                     IdentityBlock(512, 512), #conv5_2
-                    nn.AvgPool2d(kernel_size=1),
-                    nn.Flatten(),
-                    nn.Linear(512, num_classes, bias=False),
-                    nn.Softmax(dim=-1),
+                    #nn.AvgPool2d(kernel_size=1),
                 )
-    def forward(self, x):
-        return self.layers(x)
-
-class ResnetDiscriminator(nn.Module):
-    def __init__(self, num_classes, in_channels) -> None:
-        super().__init__()
-        self.layers = nn.Sequential(
-                    nn.Conv2d(in_channels, 64, kernel_size=7, stride=2, padding=1, bias=False), # conv1
-                    nn.BatchNorm2d(64, bias=False),
-                    nn.MaxPool2d(kernel_size=3, stride=2), #conv2_1
-                    IdentityBlock(64, 64), #conv2_2
-                    IdentityBlock(64, 64), #conv2_3
-                    ConvolutionBlock(64, 128), #conv3_1
-                    IdentityBlock(128, 128), #conv3_2
-                    ConvolutionBlock(128, 256), #conv4_1
-                    IdentityBlock(256, 256), #conv4_2
-                    ConvolutionBlock(256, 512), #conv5_1
-                    IdentityBlock(512, 512), #conv5_2
-                    nn.AvgPool2d(kernel_size=8),
+        self.aap = nn.AdaptiveAvgPool2d((1, 1))
+        self.final = nn.Sequential(
                     nn.Flatten(),
-                    nn.Linear(512, num_classes, bias=False),
+                    nn.Linear(512, num_classes),
                     #nn.Softmax(dim=-1),
                 )
     def forward(self, x):
-        return self.layers(x)
+        out = self.layers(x)
+        out = self.aap(out)
+        return self.final(out)

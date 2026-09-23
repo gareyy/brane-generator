@@ -7,6 +7,7 @@ from tqdm import tqdm
 import time
 from copy import deepcopy
 from brane_generator.resnet import ResnetEighteen
+from brane_generator.gfg_imp import ResNet18
 import matplotlib.pyplot as plt
 import argparse
 
@@ -24,7 +25,6 @@ train_transform = v2.Compose([
     v2.ToDtype(torch.float32, scale=True),
     v2.Normalize(*stats), # standardise values to range [-1, 1]
     v2.RandomHorizontalFlip(0.5),
-    #v2.AutoAugment(v2.AutoAugmentPolicy.CIFAR10),
     v2.RandomCrop(32, padding=4),
     ])
 
@@ -52,6 +52,7 @@ if __name__ == "__main__":
     testloader = torch.utils.data.DataLoader(testset, batch_size=BATCH_SIZE, shuffle=False, num_workers=8, pin_memory=False)
     
     model = ResnetEighteen(len(classes),3).to(device).to(dtype=torch.float32)
+    #model = ResNet18().to(device)
     n_params = sum(p.numel() for p in model.parameters())
     print(n_params)
     best = deepcopy(model)
@@ -59,9 +60,9 @@ if __name__ == "__main__":
 
     cel = nn.CrossEntropyLoss()
     optimiser = optim.SGD(model.parameters(), momentum=0.9, weight_decay=5e-4, lr=0.01)
-    #optimiser = optim.Adam(model.parameters(), lr=0.01)
+    #optimiser = optim.AdamW(model.parameters(), lr=0.01)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimiser, EPOCHS, eta_min=1e-4)
-    #scheduler = optim.lr_scheduler.MultiStepLR(optimiser, gamma=0.1, milestones=[EPOCHS//2, (3*EPOCHS)//4])
+    #scheduler = optim.lr_scheduler.MultiStepLR(optimiser, gamma=0.1, milestones=[EPOCHS//3, (2*EPOCHS)//3])
     #scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimiser, patience=20)
     scheduler_step_per_batch = False
 
@@ -82,14 +83,12 @@ if __name__ == "__main__":
         num_batches = 0
         correct_predictions = 0
         total_predictions = 0
-        model.train()
         for i, (inputs, labels) in tqdm(enumerate(trainloader), disable=DISABLE_TQDM, total=len(trainloader)):
             inputs, labels = inputs.to(device), labels.to(device)
             logits = model(inputs)
             loss = cel(logits, labels)
             optimiser.zero_grad()
             loss.backward()
-            nn.utils.clip_grad_value_(model.parameters(), 0.1)
             optimiser.step()
             train_loss += loss.item()
             num_batches += 1
