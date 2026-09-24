@@ -29,6 +29,7 @@ NOISE_DIM = 128
 OUTPUT_SIDE = 256
 OUTPUT_CHANNELS = 1
 LEARNING_RATE = 1e-3
+LOWER_LR = 1e-6
 VIS_BATCH = 9
 VIS_ROWS = int(np.sqrt(VIS_BATCH))
 
@@ -51,7 +52,7 @@ def calc_kernel_inception(real_logits, fake_logits):
     kernel_rf = (gamma * real_logits @ fake_logits.T + coef) ** degree
     return kernel_rr.mean() + kernel_ff.mean() - 2*kernel_rf.mean()
 
-NUM_EPOCHS = 100
+NUM_EPOCHS = 200
 
 IS_REAL = 1.0
 IS_FAKE = 0.0
@@ -65,10 +66,10 @@ if __name__ == "__main__":
     generator = Generator(NOISE_DIM, OUTPUT_SIDE, OUTPUT_CHANNELS).to(device)
     discriminator = Discriminator(OUTPUT_SIDE, OUTPUT_CHANNELS).to(device)
     loss = nn.BCEWithLogitsLoss()
-    optim_gen = optim.AdamW(generator.parameters(), lr=LEARNING_RATE*5)
+    optim_gen = optim.AdamW(generator.parameters(), lr=LEARNING_RATE*2)
     optim_dis = optim.AdamW(discriminator.parameters(), lr=LEARNING_RATE)
-    gen_scheduler = optim.lr_scheduler.CosineAnnealingLR(optim_gen, T_max=NUM_EPOCHS, eta_min=1e-6)
-    dis_scheduler = optim.lr_scheduler.CosineAnnealingLR(optim_dis, T_max=NUM_EPOCHS, eta_min=1e-7)
+    gen_scheduler = optim.lr_scheduler.CosineAnnealingLR(optim_gen, T_max=NUM_EPOCHS, eta_min=LOWER_LR*2)
+    dis_scheduler = optim.lr_scheduler.CosineAnnealingLR(optim_dis, T_max=NUM_EPOCHS, eta_min=LOWER_LR)
 
     print(f"NUM GEN PARAMS: {sum(p.numel() for p in generator.parameters())}\nNUM DIS PARAMS: {sum(p.numel() for p in discriminator.parameters())}")
 
@@ -79,6 +80,7 @@ if __name__ == "__main__":
     d_xs = []
     d_gx1s = []
     d_gx2s = []
+    fids = []
     for e in range(NUM_EPOCHS):
         real_loss_sum = 0.0
         fake_loss_sum = 0.0
@@ -173,8 +175,11 @@ Kernel Inception Distance: {rid:.5f}""")
         d_xs.append(D_x_sum/batches_done)
         d_gx1s.append(D_gx_1_sum/batches_done)
         d_gx2s.append(D_gx_2_sum/batches_done)
+        fids.append(fid)
+        if e % 10 == 0:
+            torch.save(generator.state_dict(), "generator.ckpt")
 
-    fig, ax = plt.subplots(1, 2)
+    fig, ax = plt.subplots(1, 3)
     plt.tight_layout()
     plt.subplots_adjust(left=0.1, right=0.95, bottom=0.1, top=0.9)
     ax[0].plot(real_losses, label="Discriminator Real Loss")
@@ -192,5 +197,11 @@ Kernel Inception Distance: {rid:.5f}""")
     ax[1].set_ylabel("Ratio of Correct Predictions")
     ax[1].set_xlabel("Epochs")
     ax[1].set_title("Ratio of Correct Predictions")
+
+    ax[2].plot(fids, label="FID")
+    ax[2].legend()
+    ax[2].set_ylabel("Frechet Inception Distance")
+    ax[2].set_xlabel("Epochs")
+    ax[2].set_title("Frechet Inception Distance")
     fig.savefig(args.chartoutput) 
     torch.save(generator.state_dict(), "generator.ckpt")

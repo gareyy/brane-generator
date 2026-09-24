@@ -42,14 +42,17 @@ class Discriminator(nn.Module):
             nn.Conv2d(self.in_channels, 128, kernel_size=KERNEL_SIZE, stride=2, padding=1, bias=False),
             nn.BatchNorm2d(128),
             nn.LeakyReLU(inplace=True),
+            nn.Dropout2d(0.2),
             # downsample to start_size/4
             nn.Conv2d(128, 64, kernel_size=KERNEL_SIZE, stride=2, padding=1, bias=False),
             nn.BatchNorm2d(64),
             nn.LeakyReLU(inplace=True),
+            nn.Dropout2d(0.2),
             # downsample to start_size/8
             nn.Conv2d(64, 32, kernel_size=KERNEL_SIZE, stride=2, padding=1, bias=False),
             nn.BatchNorm2d(32),
             nn.LeakyReLU(inplace=True),
+            nn.Dropout2d(0.2),
             nn.Flatten(),
             nn.Linear(32 * self.image_size//8 * self.image_size // 8, 1, bias=False),
         )
