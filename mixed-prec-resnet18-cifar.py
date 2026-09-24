@@ -37,7 +37,7 @@ classes = ('plane', 'car', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship'
 
 BATCH_SIZE = 512
 NUM_WORKERS = 8
-EPOCHS = 100 # limit for a100, but we have a time limit
+EPOCHS = 60 # limit for a100, but we have a time limit
 DISABLE_TQDM = False # change in rangpur
 VALID_RATIO = 0.1
 

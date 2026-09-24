@@ -24,7 +24,7 @@ image_transform = v2.Compose([
     v2.ToDtype(torch.float32, scale=True),
     ])
 
-BATCH_SIZE = 64
+BATCH_SIZE = 48
 NOISE_DIM = 128
 OUTPUT_SIDE = 256
 OUTPUT_CHANNELS = 1
@@ -65,8 +65,12 @@ if __name__ == "__main__":
     generator = Generator(NOISE_DIM, OUTPUT_SIDE, OUTPUT_CHANNELS).to(device)
     discriminator = Discriminator(OUTPUT_SIDE, OUTPUT_CHANNELS).to(device)
     loss = nn.BCEWithLogitsLoss()
-    optim_gen = optim.AdamW(generator.parameters(), lr=LEARNING_RATE*10)
+    optim_gen = optim.AdamW(generator.parameters(), lr=LEARNING_RATE*5)
     optim_dis = optim.AdamW(discriminator.parameters(), lr=LEARNING_RATE)
+    gen_scheduler = optim.lr_scheduler.CosineAnnealingLR(optim_gen, T_max=NUM_EPOCHS, eta_min=1e-6)
+    dis_scheduler = optim.lr_scheduler.CosineAnnealingLR(optim_dis, T_max=NUM_EPOCHS, eta_min=1e-7)
+
+    print(f"NUM GEN PARAMS: {sum(p.numel() for p in generator.parameters())}\nNUM DIS PARAMS: {sum(p.numel() for p in discriminator.parameters())}")
 
     num_steps = 0
     real_losses = []
@@ -121,6 +125,8 @@ if __name__ == "__main__":
             D_gx_2_sum += D_gx_2
             batches_done += 1
             #print(f"{real_loss.detach().item()}, {fake_loss.detach().item()}, {gen_loss.detach().item()}, {D_x}, {D_gx_1}, {D_gx_2}")
+        dis_scheduler.step()
+        gen_scheduler.step()
         with torch.no_grad():
             generator.eval()
             discriminator.eval()

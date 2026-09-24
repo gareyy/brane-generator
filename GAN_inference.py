@@ -6,7 +6,7 @@ import torchvision.utils as vis_utils
 import numpy as np
 plt.switch_backend("module://kitcat")
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-NUM_IMAGES = 36
+NUM_IMAGES = 1
 NUM_ROWS = int(np.sqrt(NUM_IMAGES))
 if __name__ == "__main__":
     model = Generator(GAN.NOISE_DIM, GAN.OUTPUT_SIDE, GAN.OUTPUT_CHANNELS).to(device)
